@@ -17,11 +17,7 @@ notified_matches = set()
 def send_telegram_notification(message: str):
     if TELEGRAM_BOT_TOKEN and CHAT_ID:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": CHAT_ID,
-            "text": message,
-            "parse_mode": "HTML"
-        }
+        payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
         try:
             requests.post(url, json=payload, timeout=5)
         except Exception as e:
@@ -36,7 +32,7 @@ def fetch_and_process():
     live_matches = []
     pre_matches = []
 
-    # 1. CANLI MAÇLAR (1. Yarı ve 0-0 Devam Eden Maçlar)
+    # 1. CANLI MAÇLAR (1. Yarı ve Skor 0-0 olanlar)
     try:
         live_url = f"https://{RAPIDAPI_HOST}/api/v1/sport/football/events/live"
         res_live = requests.get(live_url, headers=headers, timeout=10)
@@ -54,7 +50,6 @@ def fetch_and_process():
                 home_score = event.get("homeScore", {}).get("current", 0)
                 away_score = event.get("awayScore", {}).get("current", 0)
 
-                # İlk Yarı ve Skor 0-0 ise Sinyal Üret
                 is_first_half = (status_code == 6 or "1st half" in description or "1. yarı" in description)
                 if is_first_half and home_score == 0 and away_score == 0:
                     live_matches.append({
@@ -77,7 +72,7 @@ def fetch_and_process():
     except Exception as e:
         print(f"Live Error: {e}")
 
-    # 2. MAÇ ÖNÜ (Yaklaşan 2 Saat İçindeki Maçlar)
+    # 2. MAÇ ÖNÜ (Yaklaşan Maçlar)
     try:
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         scheduled_url = f"https://{RAPIDAPI_HOST}/api/v1/sport/football/scheduled-events/{today_str}"
@@ -125,7 +120,6 @@ def fetch_and_process():
 
     return {"live": live_matches, "pre": pre_matches}
 
-# Arka planda her 60 saniyede bir otomatik tarama yapan döngü
 async def background_scanner():
     while True:
         try:
