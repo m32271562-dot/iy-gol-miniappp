@@ -16,12 +16,40 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 TRACKED_SIGNALS = {}
+STATS = {
+    "total": 0,
+    "won": 0,
+    "lost": 0,
+    "pending": 0,
+    "start_time": datetime.now()
+}
 
 def get_tr_now():
     try:
         return datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul"))
     except Exception:
         return datetime.utcnow() + timedelta(hours=3)
+
+def get_match_title(sig):
+    """None çıkmasını imkansız kılan takım adı yakalayıcı."""
+    home = sig.get("home_team") or sig.get("home") or sig.get("team_home") or ""
+    away = sig.get("away_team") or sig.get("away") or sig.get("team_away") or ""
+    
+    if home and away:
+        return f"{home} vs {away}"
+    
+    name = sig.get("match_name") or sig.get("match") or sig.get("teams") or sig.get("title")
+    if name and name != "None":
+        return str(name)
+        
+    return "Takım Bilgisi Yok"
+
+def get_prediction_value(sig):
+    """None çıkmasını engelleyen tahmin yakalayıcı."""
+    p = sig.get("prediction") or sig.get("pick") or sig.get("tip") or sig.get("bet") or sig.get("signal_type")
+    if p and str(p) != "None":
+        return str(p)
+    return "ca"
 
 async def fetch_signals():
     tr_now = get_tr_now()
@@ -56,7 +84,7 @@ async def fetch_signals():
                             continue
 
                         for sig in signals_list:
-                            sig_id = str(sig.get("id"))
+                            sig_id = str(sig.get("id") or sig.get("external_id") or "")
                             if sig_id and sig_id not in seen_ids:
                                 seen_ids.add(sig_id)
                                 all_fetched_signals.append(sig)
@@ -66,34 +94,42 @@ async def fetch_signals():
     return all_fetched_signals
 
 async def track_signals_loop():
-    is_first_run = True  # Eski maç spamını engelleyen kilit
+    is_first_run = True
 
     while True:
         try:
             signals = await fetch_signals()
 
             if is_first_run:
-                # İlk çalıştırmada mevcut tüm sinyalleri hafızaya al, Telegram'a mesaj ATMA!
+                # Sessiz başlangıç: Geçmiş sinyalleri hafızaya al, bildirim yağmuru yapma
                 for sig in signals:
-                    sig_id = str(sig.get("id"))
+                    sig_id = str(sig.get("id") or sig.get("external_id"))
                     TRACKED_SIGNALS[sig_id] = sig
+                    
+                    st = str(sig.get("status") or "").lower()
+                    if st in ["kazandi", "won"]:
+                        STATS["won"] += 1
+                    elif st in ["kaybetti", "lost"]:
+                        STATS["lost"] += 1
+                    else:
+                        STATS["pending"] += 1
+                    STATS["total"] += 1
+
                 is_first_run = False
-                logging.info(f"Sistem hazır: {len(TRACKED_SIGNALS)} eski maç hafızaya alındı.")
+                logging.info(f"Sistem ısındı: {len(TRACKED_SIGNALS)} maç hafızada.")
             else:
-                # Canlı Takip Modu
                 for sig in signals:
-                    sig_id = str(sig.get("id"))
-                    
-                    home = sig.get("home_team", "")
-                    away = sig.get("away_team", "")
-                    match_name = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
-                    
-                    prediction = sig.get("prediction") or sig.get("pick") or sig.get("tip") or "ca"
-                    status = sig.get("status", "pending")
-                    score = sig.get("score", "0-0")
+                    sig_id = str(sig.get("id") or sig.get("external_id"))
+                    match_name = get_match_title(sig)
+                    prediction = get_prediction_value(sig)
+                    status = str(sig.get("status") or "pending").lower()
+                    score = sig.get("score") or "0-0"
 
                     if sig_id not in TRACKED_SIGNALS:
                         TRACKED_SIGNALS[sig_id] = sig
+                        STATS["total"] += 1
+                        STATS["pending"] += 1
+
                         text = (
                             f"🚨 <b>YENİ SİNYAL!</b>\n\n"
                             f"⚽ <b>Maç:</b> {match_name}\n"
@@ -101,11 +137,22 @@ async def track_signals_loop():
                             f"📊 <b>Durum:</b> {status}"
                         )
                         await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
+
                     else:
-                        old_status = TRACKED_SIGNALS[sig_id].get("status")
-                        if old_status != status and str(status).lower() in ["kazandi", "kaybetti", "won", "lost"]:
+                        old_status = str(TRACKED_SIGNALS[sig_id].get("status") or "").lower()
+                        if old_status != status and status in ["kazandi", "kaybetti", "won", "lost"]:
                             TRACKED_SIGNALS[sig_id]["status"] = status
-                            icon = "✅" if str(status).lower() in ["kazandi", "won"] else "❌"
+                            
+                            if STATS["pending"] > 0:
+                                STATS["pending"] -= 1
+
+                            if status in ["kazandi", "won"]:
+                                STATS["won"] += 1
+                                icon = "✅"
+                            else:
+                                STATS["lost"] += 1
+                                icon = "❌"
+
                             text = (
                                 f"🔔 <b>SİNYAL SONUÇLANDI!</b>\n\n"
                                 f"⚽ <b>Maç:</b> {match_name}\n"
@@ -114,25 +161,48 @@ async def track_signals_loop():
                                 f"📊 <b>Skor:</b> {score}"
                             )
                             await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
+
         except Exception as e:
             logging.error(f"Loop hatasi: {e}")
             
-        await asyncio.sleep(30)
+        await asyncio.sleep(25)
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     start_text = (
-        "✅ <b>Bot Başarıyla Bağlandı!</b>\n\n"
-        "Sistem arka planda canlı olarak çalışıyor. Yeni sinyaller veya sonuçlar geldikçe buraya düşecektir.\n\n"
-        "📌 /durum - Günün başarı yüzdesi ve istatistikler\n"
-        "📌 /sinyaller - Şu an bekleyen sinyaller"
+        "🤖 <b>VIP Bet Signal Botu Aktif!</b>\n\n"
+        "Sistem 7/24 betsignalhub.com panelini tarıyor.\n"
+        "Yeni sinyaller ve maç sonuçları anında buraya iletilecektir.\n\n"
+        "<b>Komutlar:</b>\n"
+        "• /durum - Sistem istatistikleri ve başarı oranı\n"
+        "• /sinyaller - Son takip edilen sinyal listesi"
     )
     await message.answer(start_text, parse_mode="HTML")
 
 @dp.message(Command("durum"))
 async def cmd_durum(message: types.Message):
-    total = len(TRACKED_SIGNALS)
-    await message.answer(f"📊 <b>Sistem Durumu</b>\n\nTakip Edilen Toplam Sinyal: {total}", parse_mode="HTML")
+    total = STATS["total"]
+    won = STATS["won"]
+    lost = STATS["lost"]
+    pending = STATS["pending"]
+    
+    completed = won + lost
+    win_rate = round((won / completed) * 100, 1) if completed > 0 else 0.0
+    uptime = str(datetime.now() - STATS["start_time"]).split('.')[0]
+
+    status_text = (
+        f"📊 <b>SİSTEM DÜZEYİ VE İSTATİSTİKLER</b>\n"
+        f"━━━\n"
+        f"🟢 <b>Bot Durumu:</b> Aktif (Canlı)\n"
+        f"⏱ <b>Çalışma Süresi:</b> {uptime}\n\n"
+        f"🎯 <b>Toplam Sinyal:</b> {total}\n"
+        f"⏳ <b>Bekleyen Maçlar:</b> {pending}\n"
+        f"✅ <b>Kazanan Sinyal:</b> {won}\n"
+        f"❌ <b>Kaybeden Sinyal:</b> {lost}\n"
+        f"📈 <b>Başarı Oranı:</b> %{win_rate}\n"
+        f"━━━"
+    )
+    await message.answer(status_text, parse_mode="HTML")
 
 @dp.message(Command("sinyaller"))
 async def cmd_sinyaller(message: types.Message):
@@ -140,14 +210,14 @@ async def cmd_sinyaller(message: types.Message):
         await message.answer("Henüz kaydedilmiş aktif sinyal bulunmuyor.")
         return
     
-    text = "📋 <b>Son Sinyaller:</b>\n\n"
+    text = "📋 <b>SON TAKİP EDİLEN 10 SİNYAL</b>\n━━━\n\n"
     for sig in list(TRACKED_SIGNALS.values())[-10:]:
-        home = sig.get("home_team", "")
-        away = sig.get("away_team", "")
-        m = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
-        p = sig.get("prediction") or sig.get("pick") or sig.get("tip") or "ca"
-        s = sig.get("status") or "pending"
-        text += f"• {m} - {p} ({s})\n"
+        m = get_match_title(sig)
+        p = get_prediction_value(sig)
+        s = str(sig.get("status") or "pending").upper()
+        
+        icon = "⏳" if s.lower() in ["pending", "bekliyor"] else ("✅" if s.lower() in ["kazandi", "won"] else "❌")
+        text += f"{icon} <b>{m}</b>\n┗ Tahmin: {p} | Durum: {s}\n\n"
     
     await message.answer(text, parse_mode="HTML")
 
