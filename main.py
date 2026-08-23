@@ -210,15 +210,25 @@ async def fetch_signals():
         "Referer": "https://betsignalhub.com/dashboard",
         "Accept": "application/json"
     }
+async def fetch_signals():
+    from datetime import timedelta
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://betsignalhub.com/dashboard",
+        "Accept": "application/json"
+    }
 
     all_fetched_signals = []
     seen_ids = set()
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        # Tüm sayfaları gezmek için 1'den 5'e kadar sayfa döngüsü (50 sinyale kadar çeker)
         for page in range(1, 6):
             urls = [
                 f"https://betsignalhub.com/api/signals.php?date={today_str}&page={page}&limit=50",
+                f"https://betsignalhub.com/api/signals.php?date={yesterday_str}&page={page}&limit=50",
                 f"https://betsignalhub.com/api/signals.php?page={page}&limit=50"
             ]
             
@@ -229,7 +239,6 @@ async def fetch_signals():
                         data = response.json()
                         signals_list = data.get("signals", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
                         
-                        # Eğer sayfadan hiç sinyal dönmediyse bu seriyi atla
                         if not signals_list:
                             continue
 
@@ -243,3 +252,4 @@ async def fetch_signals():
 
     return all_fetched_signals
 
+    
