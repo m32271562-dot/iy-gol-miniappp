@@ -16,6 +16,29 @@ dp = Dispatcher()
 
 TRACKED_SIGNALS = {}
 
+def extract_match_name(sig):
+    home = sig.get("home_team") or sig.get("home") or sig.get("team_home") or ""
+    away = sig.get("away_team") or sig.get("away") or sig.get("team_away") or ""
+    if home and away:
+        return f"{home} vs {away}"
+    return sig.get("match_name") or sig.get("match") or sig.get("teams") or sig.get("title") or "Bilinmiyor"
+
+def extract_prediction(sig):
+    # Sitenin API'sinde tahmini tutabilecek tüm olası alanlar
+    p = (
+        sig.get("prediction") or 
+        sig.get("pick") or 
+        sig.get("tip") or 
+        sig.get("bet") or 
+        sig.get("signal") or 
+        sig.get("signal_type") or 
+        sig.get("market") or 
+        sig.get("type")
+    )
+    if p:
+        return str(p)
+    return "ca"  # Varsayılan tahmin tipi (Görsellerdeki ca tahmini)
+
 async def fetch_signals():
     today_str = datetime.now().strftime("%Y-%m-%d")
     yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -48,7 +71,7 @@ async def fetch_signals():
                             continue
 
                         for sig in signals_list:
-                            sig_id = str(sig.get("id"))
+                            sig_id = str(sig.get("external_id") or sig.get("id"))
                             if sig_id and sig_id not in seen_ids:
                                 seen_ids.add(sig_id)
                                 all_fetched_signals.append(sig)
@@ -62,16 +85,12 @@ async def track_signals_loop():
         try:
             signals = await fetch_signals()
             for sig in signals:
-                sig_id = str(sig.get("id"))
+                sig_id = str(sig.get("external_id") or sig.get("id"))
+                status = str(sig.get("status") or sig.get("state") or "pending")
                 
-                # Orijinal Veri Alanları
-                home = sig.get("home_team", "")
-                away = sig.get("away_team", "")
-                match_name = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
-                
-                prediction = sig.get("prediction") or sig.get("pick") or "Bilinmiyor"
-                status = sig.get("status", "pending")
-                score = sig.get("score", "N/A")
+                match_name = extract_match_name(sig)
+                prediction = extract_prediction(sig)
+                score = sig.get("score") or sig.get("result_score") or sig.get("ft_score") or "N/A"
 
                 if sig_id not in TRACKED_SIGNALS:
                     TRACKED_SIGNALS[sig_id] = sig
@@ -83,10 +102,10 @@ async def track_signals_loop():
                     )
                     await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
                 else:
-                    old_status = TRACKED_SIGNALS[sig_id].get("status")
-                    if old_status != status and str(status).lower() in ["kazandi", "kaybetti", "won", "lost"]:
+                    old_status = str(TRACKED_SIGNALS[sig_id].get("status"))
+                    if old_status != status and status.lower() in ["kazandi", "kaybetti", "won", "lost"]:
                         TRACKED_SIGNALS[sig_id]["status"] = status
-                        icon = "✅" if str(status).lower() in ["kazandi", "won"] else "❌"
+                        icon = "✅" if status.lower() in ["kazandi", "won"] else "❌"
                         text = (
                             f"🔔 <b>SİNYAL SONUÇLANDI!</b>\n\n"
                             f"⚽ {match_name}\n"
@@ -117,10 +136,8 @@ async def cmd_sinyaller(message: types.Message):
     
     text = "📋 <b>Son Sinyaller:</b>\n\n"
     for sig in list(TRACKED_SIGNALS.values())[-10:]:
-        home = sig.get("home_team", "")
-        away = sig.get("away_team", "")
-        m = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
-        p = sig.get("prediction") or "Bilinmiyor"
+        m = extract_match_name(sig)
+        p = extract_prediction(sig)
         s = sig.get("status") or "pending"
         text += f"• {m} - {p} ({s})\n"
     
