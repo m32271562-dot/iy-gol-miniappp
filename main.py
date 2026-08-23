@@ -66,21 +66,21 @@ async def fetch_signals():
     return all_fetched_signals
 
 async def track_signals_loop():
-    is_first_run = True  # Eski maç spamını önleyen kilit
-    
+    is_first_run = True  # Eski maç spamını engelleyen kilit
+
     while True:
         try:
             signals = await fetch_signals()
-            
+
             if is_first_run:
-                # İlk turda sitedeki tüm maçları sessizce hafızaya kaydet, Telegram'a mesaj ATMA!
+                # İlk çalıştırmada mevcut tüm sinyalleri hafızaya al, Telegram'a mesaj ATMA!
                 for sig in signals:
                     sig_id = str(sig.get("id"))
                     TRACKED_SIGNALS[sig_id] = sig
                 is_first_run = False
-                logging.info(f"Hafiza doldu: {len(TRACKED_SIGNALS)} mac kayit edildi. Bildirimler hazir.")
+                logging.info(f"Sistem hazır: {len(TRACKED_SIGNALS)} eski maç hafızaya alındı.")
             else:
-                # Sonraki turlarda sadece YENİ düşenleri veya SONUÇLANANLARI at
+                # Canlı Takip Modu
                 for sig in signals:
                     sig_id = str(sig.get("id"))
                     
@@ -88,7 +88,7 @@ async def track_signals_loop():
                     away = sig.get("away_team", "")
                     match_name = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
                     
-                    prediction = sig.get("prediction") or sig.get("pick") or "Bilinmiyor"
+                    prediction = sig.get("prediction") or sig.get("pick") or sig.get("tip") or "ca"
                     status = sig.get("status", "pending")
                     score = sig.get("score", "0-0")
 
@@ -121,7 +121,13 @@ async def track_signals_loop():
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("🤖 Bot aktif ve canlı sinyalleri takip ediyor!")
+    start_text = (
+        "✅ <b>Bot Başarıyla Bağlandı!</b>\n\n"
+        "Sistem arka planda canlı olarak çalışıyor. Yeni sinyaller veya sonuçlar geldikçe buraya düşecektir.\n\n"
+        "📌 /durum - Günün başarı yüzdesi ve istatistikler\n"
+        "📌 /sinyaller - Şu an bekleyen sinyaller"
+    )
+    await message.answer(start_text, parse_mode="HTML")
 
 @dp.message(Command("durum"))
 async def cmd_durum(message: types.Message):
@@ -139,7 +145,7 @@ async def cmd_sinyaller(message: types.Message):
         home = sig.get("home_team", "")
         away = sig.get("away_team", "")
         m = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
-        p = sig.get("prediction") or sig.get("pick") or "Bilinmiyor"
+        p = sig.get("prediction") or sig.get("pick") or sig.get("tip") or "ca"
         s = sig.get("status") or "pending"
         text += f"• {m} - {p} ({s})\n"
     
