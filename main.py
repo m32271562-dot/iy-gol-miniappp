@@ -66,42 +66,54 @@ async def fetch_signals():
     return all_fetched_signals
 
 async def track_signals_loop():
+    is_first_run = True  # Eski maç spamını önleyen kilit
+    
     while True:
         try:
             signals = await fetch_signals()
-            for sig in signals:
-                sig_id = str(sig.get("id"))
-                
-                home = sig.get("home_team", "")
-                away = sig.get("away_team", "")
-                match_name = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
-                
-                prediction = sig.get("prediction") or sig.get("pick") or "Bilinmiyor"
-                status = sig.get("status", "pending")
-                score = sig.get("score", "0-0")
-
-                if sig_id not in TRACKED_SIGNALS:
+            
+            if is_first_run:
+                # İlk turda sitedeki tüm maçları sessizce hafızaya kaydet, Telegram'a mesaj ATMA!
+                for sig in signals:
+                    sig_id = str(sig.get("id"))
                     TRACKED_SIGNALS[sig_id] = sig
-                    text = (
-                        f"🚨 <b>YENİ SİNYAL!</b>\n\n"
-                        f"⚽ <b>Maç:</b> {match_name}\n"
-                        f"📌 <b>Tahmin:</b> {prediction}\n"
-                        f"📊 <b>Durum:</b> {status}"
-                    )
-                    await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
-                else:
-                    old_status = TRACKED_SIGNALS[sig_id].get("status")
-                    if old_status != status and str(status).lower() in ["kazandi", "kaybetti", "won", "lost"]:
-                        TRACKED_SIGNALS[sig_id]["status"] = status
-                        icon = "✅" if str(status).lower() in ["kazandi", "won"] else "❌"
+                is_first_run = False
+                logging.info(f"Hafiza doldu: {len(TRACKED_SIGNALS)} mac kayit edildi. Bildirimler hazir.")
+            else:
+                # Sonraki turlarda sadece YENİ düşenleri veya SONUÇLANANLARI at
+                for sig in signals:
+                    sig_id = str(sig.get("id"))
+                    
+                    home = sig.get("home_team", "")
+                    away = sig.get("away_team", "")
+                    match_name = f"{home} vs {away}" if home and away else (sig.get("match_name") or "Bilinmiyor")
+                    
+                    prediction = sig.get("prediction") or sig.get("pick") or "Bilinmiyor"
+                    status = sig.get("status", "pending")
+                    score = sig.get("score", "0-0")
+
+                    if sig_id not in TRACKED_SIGNALS:
+                        TRACKED_SIGNALS[sig_id] = sig
                         text = (
-                            f"🔔 <b>SİNYAL SONUÇLANDI!</b>\n\n"
+                            f"🚨 <b>YENİ SİNYAL!</b>\n\n"
                             f"⚽ <b>Maç:</b> {match_name}\n"
                             f"📌 <b>Tahmin:</b> {prediction}\n"
-                            f"🎯 <b>Sonuç:</b> {icon} {status}\n"
-                            f"📊 <b>Skor:</b> {score}"
+                            f"📊 <b>Durum:</b> {status}"
                         )
                         await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
+                    else:
+                        old_status = TRACKED_SIGNALS[sig_id].get("status")
+                        if old_status != status and str(status).lower() in ["kazandi", "kaybetti", "won", "lost"]:
+                            TRACKED_SIGNALS[sig_id]["status"] = status
+                            icon = "✅" if str(status).lower() in ["kazandi", "won"] else "❌"
+                            text = (
+                                f"🔔 <b>SİNYAL SONUÇLANDI!</b>\n\n"
+                                f"⚽ <b>Maç:</b> {match_name}\n"
+                                f"📌 <b>Tahmin:</b> {prediction}\n"
+                                f"🎯 <b>Sonuç:</b> {icon} {status}\n"
+                                f"📊 <b>Skor:</b> {score}"
+                            )
+                            await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
         except Exception as e:
             logging.error(f"Loop hatasi: {e}")
             
