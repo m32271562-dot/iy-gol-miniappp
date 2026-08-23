@@ -6,8 +6,8 @@ import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-# Telegram Bot Yapılandırması
-BOT_TOKEN = "8720695015:AAFe7b-GCn1hi95NILLGH16Cqp7ZqlAlO5Y"
+# Telegram Bot Yapılandırması (Yeni Token Tanımlandı)
+BOT_TOKEN = "8720695015:AAFPqdMU_O9mj4AhFZ7mlMqjIx5OBfFnHl0"
 CHAT_ID = "6955637394"
 
 logging.basicConfig(level=logging.INFO)
@@ -31,21 +31,17 @@ def get_tr_now():
         return datetime.utcnow() + timedelta(hours=3)
 
 def get_match_title(sig):
-    """None çıkmasını imkansız kılan takım adı yakalayıcı."""
     home = sig.get("home_team") or sig.get("home") or sig.get("team_home") or ""
     away = sig.get("away_team") or sig.get("away") or sig.get("team_away") or ""
-    
     if home and away:
         return f"{home} vs {away}"
     
     name = sig.get("match_name") or sig.get("match") or sig.get("teams") or sig.get("title")
-    if name and name != "None":
+    if name and str(name) != "None":
         return str(name)
-        
-    return "Takım Bilgisi Yok"
+    return "Bilinmiyor"
 
 def get_prediction_value(sig):
-    """None çıkmasını engelleyen tahmin yakalayıcı."""
     p = sig.get("prediction") or sig.get("pick") or sig.get("tip") or sig.get("bet") or sig.get("signal_type")
     if p and str(p) != "None":
         return str(p)
@@ -89,7 +85,7 @@ async def fetch_signals():
                                 seen_ids.add(sig_id)
                                 all_fetched_signals.append(sig)
                 except Exception as e:
-                    logging.error(f"API Hatasi ({url}): {e}")
+                    logging.error(f"API Hatasi: {e}")
 
     return all_fetched_signals
 
@@ -101,7 +97,7 @@ async def track_signals_loop():
             signals = await fetch_signals()
 
             if is_first_run:
-                # Sessiz başlangıç: Geçmiş sinyalleri hafızaya al, bildirim yağmuru yapma
+                # İlk başlangıç: Eski maçları hafızaya alır, bildirim göndermez
                 for sig in signals:
                     sig_id = str(sig.get("id") or sig.get("external_id"))
                     TRACKED_SIGNALS[sig_id] = sig
@@ -116,7 +112,6 @@ async def track_signals_loop():
                     STATS["total"] += 1
 
                 is_first_run = False
-                logging.info(f"Sistem ısındı: {len(TRACKED_SIGNALS)} maç hafızada.")
             else:
                 for sig in signals:
                     sig_id = str(sig.get("id") or sig.get("external_id"))
@@ -192,7 +187,7 @@ async def cmd_durum(message: types.Message):
 
     status_text = (
         f"📊 <b>SİSTEM DÜZEYİ VE İSTATİSTİKLER</b>\n"
-        f"━━━\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🟢 <b>Bot Durumu:</b> Aktif (Canlı)\n"
         f"⏱ <b>Çalışma Süresi:</b> {uptime}\n\n"
         f"🎯 <b>Toplam Sinyal:</b> {total}\n"
@@ -200,7 +195,7 @@ async def cmd_durum(message: types.Message):
         f"✅ <b>Kazanan Sinyal:</b> {won}\n"
         f"❌ <b>Kaybeden Sinyal:</b> {lost}\n"
         f"📈 <b>Başarı Oranı:</b> %{win_rate}\n"
-        f"━━━"
+        f"━━━━━━━━━━━━━━━━━━━━"
     )
     await message.answer(status_text, parse_mode="HTML")
 
@@ -210,7 +205,7 @@ async def cmd_sinyaller(message: types.Message):
         await message.answer("Henüz kaydedilmiş aktif sinyal bulunmuyor.")
         return
     
-    text = "📋 <b>SON TAKİP EDİLEN 10 SİNYAL</b>\n━━━\n\n"
+    text = "📋 <b>SON TAKİP EDİLEN 10 SİNYAL</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
     for sig in list(TRACKED_SIGNALS.values())[-10:]:
         m = get_match_title(sig)
         p = get_prediction_value(sig)
