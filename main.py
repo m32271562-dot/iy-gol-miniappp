@@ -1,12 +1,12 @@
 import asyncio
 import logging
+import json
+import urllib.request
 from datetime import datetime, timedelta
 import zoneinfo
-import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-# Telegram Bot Yapılandırması (Yeni Token Tanımlandı)
 BOT_TOKEN = "8720695015:AAFPqdMU_O9mj4AhFZ7mlMqjIx5OBfFnHl0"
 CHAT_ID = "6955637394"
 
@@ -47,45 +47,51 @@ def get_prediction_value(sig):
         return str(p)
     return "ca"
 
+def fetch_url_json(url):
+    req = urllib.request.Request(
+        url, 
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://betsignalhub.com/dashboard",
+            "Accept": "application/json"
+        }
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        if resp.status == 200:
+            return json.loads(resp.read().decode('utf-8'))
+    return None
+
 async def fetch_signals():
     tr_now = get_tr_now()
     today_str = tr_now.strftime("%Y-%m-%d")
     yesterday_str = (tr_now - timedelta(days=1)).strftime("%Y-%m-%d")
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://betsignalhub.com/dashboard",
-        "Accept": "application/json"
-    }
-
     all_fetched_signals = []
     seen_ids = set()
 
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-        for page in range(1, 6):
-            urls = [
-                f"https://betsignalhub.com/api/signals.php?date={today_str}&page={page}&limit=50",
-                f"https://betsignalhub.com/api/signals.php?date={yesterday_str}&page={page}&limit=50",
-                f"https://betsignalhub.com/api/signals.php?page={page}&limit=50"
-            ]
-            
-            for url in urls:
-                try:
-                    response = await client.get(url, headers=headers)
-                    if response.status_code == 200:
-                        data = response.json()
-                        signals_list = data.get("signals", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-                        
-                        if not signals_list:
-                            continue
+    for page in range(1, 6):
+        urls = [
+            f"https://betsignalhub.com/api/signals.php?date={today_str}&page={page}&limit=50",
+            f"https://betsignalhub.com/api/signals.php?date={yesterday_str}&page={page}&limit=50",
+            f"https://betsignalhub.com/api/signals.php?page={page}&limit=50"
+        ]
+        
+        for url in urls:
+            try:
+                data = await asyncio.to_thread(fetch_url_json, url)
+                if data:
+                    signals_list = data.get("signals", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    
+                    if not signals_list:
+                        continue
 
-                        for sig in signals_list:
-                            sig_id = str(sig.get("id") or sig.get("external_id") or "")
-                            if sig_id and sig_id not in seen_ids:
-                                seen_ids.add(sig_id)
-                                all_fetched_signals.append(sig)
-                except Exception as e:
-                    logging.error(f"API Hatasi: {e}")
+                    for sig in signals_list:
+                        sig_id = str(sig.get("id") or sig.get("external_id") or "")
+                        if sig_id and sig_id not in seen_ids:
+                            seen_ids.add(sig_id)
+                            all_fetched_signals.append(sig)
+            except Exception as e:
+                logging.error(f"API Hatasi: {e}")
 
     return all_fetched_signals
 
@@ -97,7 +103,6 @@ async def track_signals_loop():
             signals = await fetch_signals()
 
             if is_first_run:
-                # İlk başlangıç: Eski maçları hafızaya alır, bildirim göndermez
                 for sig in signals:
                     sig_id = str(sig.get("id") or sig.get("external_id"))
                     TRACKED_SIGNALS[sig_id] = sig
