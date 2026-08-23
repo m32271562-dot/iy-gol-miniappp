@@ -5,7 +5,7 @@ import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-# Telegram Bot Yapılandırması (Güncellendi)
+# Telegram Bot Yapılandırması
 BOT_TOKEN = "8720695015:AAFe7b-GCn1hi95NILLGH16Cqp7ZqlAlO5Y"
 CHAT_ID = "6955637394"
 
@@ -63,28 +63,49 @@ async def track_signals_loop():
             signals = await fetch_signals()
             for sig in signals:
                 sig_id = str(sig.get("external_id") or sig.get("id"))
-                status = sig.get("status")
+                status = str(sig.get("status") or sig.get("state") or "Bekliyor")
                 
+                # API'den gelebilecek tüm alternatif parametre adları
+                match_name = (
+                    sig.get("match_name") or 
+                    sig.get("match") or 
+                    sig.get("teams") or 
+                    sig.get("home_team") or 
+                    sig.get("title") or 
+                    "Bilinmiyor"
+                )
+                
+                prediction = (
+                    sig.get("prediction") or 
+                    sig.get("pick") or 
+                    sig.get("tip") or 
+                    sig.get("bet") or 
+                    sig.get("signal_type") or 
+                    "Bilinmiyor"
+                )
+                
+                score = sig.get("score") or sig.get("result_score") or sig.get("ft_score") or "N/A"
+
                 if sig_id not in TRACKED_SIGNALS:
                     TRACKED_SIGNALS[sig_id] = sig
                     text = (
                         f"🚨 <b>YENİ SİNYAL!</b>\n\n"
-                        f"⚽ <b>Maç:</b> {sig.get('match_name', 'Bilinmiyor')}\n"
-                        f"📌 <b>Tahmin:</b> {sig.get('prediction', 'Bilinmiyor')}\n"
+                        f"⚽ <b>Maç:</b> {match_name}\n"
+                        f"📌 <b>Tahmin:</b> {prediction}\n"
                         f"📊 <b>Durum:</b> {status}"
                     )
                     await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
                 else:
-                    old_status = TRACKED_SIGNALS[sig_id].get("status")
-                    if old_status != status and status in ["KAZANDI", "KAYBETTİ", "WON", "LOST"]:
+                    old_status = str(TRACKED_SIGNALS[sig_id].get("status"))
+                    if old_status != status and status.lower() in ["kazandi", "kaybetti", "won", "lost"]:
                         TRACKED_SIGNALS[sig_id]["status"] = status
-                        icon = "✅" if status in ["KAZANDI", "WON"] else "❌"
+                        icon = "✅" if status.lower() in ["kazandi", "won"] else "❌"
                         text = (
                             f"🔔 <b>SİNYAL SONUÇLANDI!</b>\n\n"
-                            f"⚽ {sig.get('match_name', 'Bilinmiyor')}\n"
-                            f"📌 <b>Tahmin:</b> {sig.get('prediction', 'Bilinmiyor')}\n"
+                            f"⚽ {match_name}\n"
+                            f"📌 <b>Tahmin:</b> {prediction}\n"
                             f"🎯 <b>Sonuç:</b> {icon} {status}\n"
-                            f"📊 <b>Skor:</b> {sig.get('score', 'N/A')}"
+                            f"📊 <b>Skor:</b> {score}"
                         )
                         await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
         except Exception as e:
@@ -109,7 +130,10 @@ async def cmd_sinyaller(message: types.Message):
     
     text = "📋 <b>Son Sinyaller:</b>\n\n"
     for sig in list(TRACKED_SIGNALS.values())[-10:]:
-        text += f"• {sig.get('match_name')} - {sig.get('prediction')} ({sig.get('status')})\n"
+        m = sig.get("match_name") or sig.get("match") or "Bilinmiyor"
+        p = sig.get("prediction") or sig.get("pick") or "Bilinmiyor"
+        s = sig.get("status") or "Bekliyor"
+        text += f"• {m} - {p} ({s})\n"
     
     await message.answer(text, parse_mode="HTML")
 
