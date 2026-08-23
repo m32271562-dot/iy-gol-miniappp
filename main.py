@@ -165,3 +165,41 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+async def fetch_signals():
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # 1. Farklı filtrelerle API istek adresleri (Tüm sinyalleri yakalamak için)
+    urls = [
+        f"https://betsignalhub.com/api/signals.php?date={today_str}&limit=1000",
+        "https://betsignalhub.com/api/signals.php?status=all&limit=1000",
+        "https://betsignalhub.com/api/signals.php"
+    ]
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://betsignalhub.com/dashboard",
+        "Accept": "application/json"
+    }
+
+    all_fetched_signals = []
+    seen_ids = set()
+
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for url in urls:
+            try:
+                response = await client.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    signals_list = data.get("signals", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    
+                    # Çekilen verileri çakışma olmadan birleştir
+                    for sig in signals_list:
+                        sig_id = str(sig.get("external_id") or sig.get("id"))
+                        if sig_id and sig_id not in seen_ids:
+                            seen_ids.add(sig_id)
+                            all_fetched_signals.append(sig)
+            except Exception as e:
+                logging.error(f"API Baglanti Hatasi ({url}): {e}")
+
+    return all_fetched_signals
