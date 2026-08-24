@@ -6,7 +6,8 @@ import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-BOT_TOKEN = "8720695015:AAFPqdMU_O9mj4AhFZ7mlMqjIx5OBfFnHl0"
+# YENİ TOKENİ BURAYA YAPIŞTIR
+BOT_TOKEN = "8720695015:AAEznlCH2vfagkIXihP-2I8OoP7eixNYP2M"
 CHAT_ID = "6955637394"
 
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +16,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 TRACKED_SIGNALS = {}
-NOTIFIED_SIGNALS = set()  # Mükerrer bildirimi %100 engelleyen kilit
+NOTIFIED_SIGNALS = set()
 
 STATS = {
     "total": 0,
@@ -68,7 +69,6 @@ def generate_sig_id(sig):
     raw_id = sig.get("id") or sig.get("external_id")
     if raw_id and str(raw_id) != "None":
         return str(raw_id)
-    # ID yoksa Maç + Tahmin stringinden ID üretir
     m = get_match_title(sig)
     p = get_prediction_value(sig)
     return f"{m}_{p}".replace(" ", "_")
@@ -128,7 +128,7 @@ async def track_signals_loop():
                     sig_id = generate_sig_id(sig)
                     sig["_added_at"] = now_dt
                     TRACKED_SIGNALS[sig_id] = sig
-                    NOTIFIED_SIGNALS.add(sig_id)  # İlk çalıştaki geçmiş sinyalleri bildirme
+                    NOTIFIED_SIGNALS.add(sig_id)
                     
                     st = str(sig.get("status") or "").lower()
                     if st in ["kazandi", "won"]:
