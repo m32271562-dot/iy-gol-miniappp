@@ -15,6 +15,8 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 TRACKED_SIGNALS = {}
+NOTIFIED_SIGNALS = set()  # Mükerrer bildirimi %100 engelleyen kilit
+
 STATS = {
     "total": 0,
     "won": 0,
@@ -62,6 +64,15 @@ def get_prediction_value(sig):
         return str(p)
     return "ca"
 
+def generate_sig_id(sig):
+    raw_id = sig.get("id") or sig.get("external_id")
+    if raw_id and str(raw_id) != "None":
+        return str(raw_id)
+    # ID yoksa Maç + Tahmin stringinden ID üretir
+    m = get_match_title(sig)
+    p = get_prediction_value(sig)
+    return f"{m}_{p}".replace(" ", "_")
+
 async def fetch_signals():
     tr_now = get_tr_now()
     today_str = tr_now.strftime("%Y-%m-%d")
@@ -95,7 +106,7 @@ async def fetch_signals():
                             continue
 
                         for sig in signals_list:
-                            sig_id = str(sig.get("id") or sig.get("external_id") or "")
+                            sig_id = generate_sig_id(sig)
                             if sig_id and sig_id not in seen_ids:
                                 seen_ids.add(sig_id)
                                 all_fetched_signals.append(sig)
@@ -114,9 +125,10 @@ async def track_signals_loop():
 
             if is_first_run:
                 for sig in signals:
-                    sig_id = str(sig.get("id") or sig.get("external_id"))
-                    sig["_added_at"] = now_dt  # Bot hafızasına alınma saati
+                    sig_id = generate_sig_id(sig)
+                    sig["_added_at"] = now_dt
                     TRACKED_SIGNALS[sig_id] = sig
+                    NOTIFIED_SIGNALS.add(sig_id)  # İlk çalıştaki geçmiş sinyalleri bildirme
                     
                     st = str(sig.get("status") or "").lower()
                     if st in ["kazandi", "won"]:
@@ -130,7 +142,7 @@ async def track_signals_loop():
                 is_first_run = False
             else:
                 for sig in signals:
-                    sig_id = str(sig.get("id") or sig.get("external_id"))
+                    sig_id = generate_sig_id(sig)
                     match_name = get_match_title(sig)
                     league = get_league_name(sig)
                     type_tag = get_match_type_tag(sig)
@@ -144,14 +156,16 @@ async def track_signals_loop():
                         STATS["total"] += 1
                         STATS["pending"] += 1
 
-                        text = (
-                            f"🚨 <b>YENİ SİNYAL! {type_tag}</b>\n\n"
-                            f"🏆 <b>Lig:</b> {league}\n"
-                            f"⚽ <b>Maç:</b> {match_name}\n"
-                            f"📌 <b>Tahmin:</b> {prediction}\n"
-                            f"📊 <b>Durum:</b> Bekleniyor"
-                        )
-                        await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
+                        if sig_id not in NOTIFIED_SIGNALS:
+                            NOTIFIED_SIGNALS.add(sig_id)
+                            text = (
+                                f"🚨 <b>YENİ SİNYAL! {type_tag}</b>\n\n"
+                                f"🏆 <b>Lig:</b> {league}\n"
+                                f"⚽ <b>Maç:</b> {match_name}\n"
+                                f"📌 <b>Tahmin:</b> {prediction}\n"
+                                f"📊 <b>Durum:</b> Bekleniyor"
+                            )
+                            await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
 
                     else:
                         old_status = str(TRACKED_SIGNALS[sig_id].get("status") or "").lower()
@@ -171,15 +185,18 @@ async def track_signals_loop():
                                 icon = "❌"
                                 status_tr = "KAYBETTİ"
 
-                            text = (
-                                f"🔔 <b>SİNYAL SONUÇLANDI! {type_tag}</b>\n\n"
-                                f"🏆 <b>Lig:</b> {league}\n"
-                                f"⚽ <b>Maç:</b> {match_name}\n"
-                                f"📌 <b>Tahmin:</b> {prediction}\n"
-                                f"🎯 <b>Sonuç:</b> {icon} {status_tr}\n"
-                                f"📊 <b>Skor:</b> {score}"
-                            )
-                            await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
+                            result_key = f"{sig_id}_{status}"
+                            if result_key not in NOTIFIED_SIGNALS:
+                                NOTIFIED_SIGNALS.add(result_key)
+                                text = (
+                                    f"🔔 <b>SİNYAL SONUÇLANDI! {type_tag}</b>\n\n"
+                                    f"🏆 <b>Lig:</b> {league}\n"
+                                    f"⚽ <b>Maç:</b> {match_name}\n"
+                                    f"📌 <b>Tahmin:</b> {prediction}\n"
+                                    f"🎯 <b>Sonuç:</b> {icon} {status_tr}\n"
+                                    f"📊 <b>Skor:</b> {score}"
+                                )
+                                await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
 
         except Exception as e:
             logging.error(f"Loop hatasi: {e}")
@@ -234,7 +251,6 @@ async def cmd_sinyaller(message: types.Message):
         status = str(sig.get("status") or "pending").lower()
         if status in ["pending", "bekliyor"]:
             added_at = sig.get("_added_at")
-            # Eklenme süresi 4 saati geçmeyen maçları alır
             if added_at is None or added_at >= cutoff_time:
                 valid_pending_signals.append(sig)
     
