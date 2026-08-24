@@ -6,7 +6,7 @@ import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-BOT_TOKEN = "8720695015:AAFPqdMU_O9mj4AhFZ7mlMqjIx5OBfFnHl0"
+BOT_TOKEN = "8720695015:AAE8oDgreKR4LZsMW8cHpLjCS6VirrCHIHA"
 CHAT_ID = "6955637394"
 
 logging.basicConfig(level=logging.INFO)
