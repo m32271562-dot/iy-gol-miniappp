@@ -6,8 +6,7 @@ import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-# YENİ TOKENİ BURAYA YAPIŞTIR
-BOT_TOKEN = "8720695015:AAEznlCH2vfagkIXihP-2I8OoP7eixNYP2M"
+BOT_TOKEN = "8720695015:AAEznlCH2vfagIXihP-2_z4v_o60B7r4B08"
 CHAT_ID = "6955637394"
 
 logging.basicConfig(level=logging.INFO)
@@ -51,11 +50,10 @@ def get_league_name(sig):
 
 def get_match_type_tag(sig):
     stype = str(sig.get("type") or sig.get("signal_type") or sig.get("market") or "").lower()
-    minute = str(sig.get("minute") or sig.get("min") or "")
+    half = str(sig.get("half") or sig.get("period") or "").lower()
     
-    if "iy" in stype or "ht" in stype or "half" in stype or "ilk yarı" in stype:
-        return "[İ.Y]"
-    elif minute and minute.isdigit() and int(minute) <= 45:
+    # Sadece açıkça İY veya İlk Yarı ibaresi geçerse [İ.Y] koyar, aksi halde [CM]
+    if "iy" in stype or "ht" in stype or "half" in stype or "ilk yarı" in stype or "1st" in half or "ht" in half:
         return "[İ.Y]"
     return "[CM]"
 
@@ -76,7 +74,6 @@ def generate_sig_id(sig):
 async def fetch_signals():
     tr_now = get_tr_now()
     today_str = tr_now.strftime("%Y-%m-%d")
-    yesterday_str = (tr_now - timedelta(days=1)).strftime("%Y-%m-%d")
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -89,29 +86,23 @@ async def fetch_signals():
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
         for page in range(1, 6):
-            urls = [
-                f"https://betsignalhub.com/api/signals.php?date={today_str}&page={page}&limit=50",
-                f"https://betsignalhub.com/api/signals.php?date={yesterday_str}&page={page}&limit=50",
-                f"https://betsignalhub.com/api/signals.php?page={page}&limit=50"
-            ]
-            
-            for url in urls:
-                try:
-                    response = await client.get(url, headers=headers)
-                    if response.status_code == 200:
-                        data = response.json()
-                        signals_list = data.get("signals", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-                        
-                        if not signals_list:
-                            continue
+            url = f"https://betsignalhub.com/api/signals.php?date={today_str}&page={page}&limit=50"
+            try:
+                response = await client.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    signals_list = data.get("signals", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    
+                    if not signals_list:
+                        continue
 
-                        for sig in signals_list:
-                            sig_id = generate_sig_id(sig)
-                            if sig_id and sig_id not in seen_ids:
-                                seen_ids.add(sig_id)
-                                all_fetched_signals.append(sig)
-                except Exception as e:
-                    logging.error(f"API Hatasi: {e}")
+                    for sig in signals_list:
+                        sig_id = generate_sig_id(sig)
+                        if sig_id and sig_id not in seen_ids:
+                            seen_ids.add(sig_id)
+                            all_fetched_signals.append(sig)
+            except Exception as e:
+                logging.error(f"API Hatasi: {e}")
 
     return all_fetched_signals
 
@@ -133,8 +124,10 @@ async def track_signals_loop():
                     st = str(sig.get("status") or "").lower()
                     if st in ["kazandi", "won"]:
                         STATS["won"] += 1
+                        NOTIFIED_SIGNALS.add(f"{sig_id}_kazandi")
                     elif st in ["kaybetti", "lost"]:
                         STATS["lost"] += 1
+                        NOTIFIED_SIGNALS.add(f"{sig_id}_kaybetti")
                     else:
                         STATS["pending"] += 1
                     STATS["total"] += 1
@@ -180,12 +173,13 @@ async def track_signals_loop():
                                 STATS["won"] += 1
                                 icon = "✅"
                                 status_tr = "KAZANDI"
+                                result_key = f"{sig_id}_kazandi"
                             else:
                                 STATS["lost"] += 1
                                 icon = "❌"
                                 status_tr = "KAYBETTİ"
+                                result_key = f"{sig_id}_kaybetti"
 
-                            result_key = f"{sig_id}_{status}"
                             if result_key not in NOTIFIED_SIGNALS:
                                 NOTIFIED_SIGNALS.add(result_key)
                                 text = (
