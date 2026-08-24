@@ -29,18 +29,6 @@ def get_tr_now():
     except Exception:
         return datetime.utcnow() + timedelta(hours=3)
 
-def parse_signal_date(sig):
-    date_str = sig.get("created_at") or sig.get("date") or sig.get("match_date") or sig.get("created")
-    if not date_str:
-        return None
-    try:
-        return datetime.strptime(str(date_str).split(".")[0], "%Y-%m-%d %H:%M:%S")
-    except Exception:
-        try:
-            return datetime.strptime(str(date_str).split("T")[0], "%Y-%m-%d")
-        except Exception:
-            return None
-
 def get_match_title(sig):
     home = sig.get("home_team") or sig.get("home") or sig.get("team_home") or ""
     away = sig.get("away_team") or sig.get("away") or sig.get("team_away") or ""
@@ -59,7 +47,6 @@ def get_league_name(sig):
     return "Genel Lig"
 
 def get_match_type_tag(sig):
-    # Maç tipi veya dakikaya göre [İ.Y] ya da [CM] belirler
     stype = str(sig.get("type") or sig.get("signal_type") or sig.get("market") or "").lower()
     minute = str(sig.get("minute") or sig.get("min") or "")
     
@@ -123,10 +110,12 @@ async def track_signals_loop():
     while True:
         try:
             signals = await fetch_signals()
+            now_dt = get_tr_now().replace(tzinfo=None)
 
             if is_first_run:
                 for sig in signals:
                     sig_id = str(sig.get("id") or sig.get("external_id"))
+                    sig["_added_at"] = now_dt  # Bot hafızasına alınma saati
                     TRACKED_SIGNALS[sig_id] = sig
                     
                     st = str(sig.get("status") or "").lower()
@@ -150,6 +139,7 @@ async def track_signals_loop():
                     score = sig.get("score") or "0-0"
 
                     if sig_id not in TRACKED_SIGNALS:
+                        sig["_added_at"] = now_dt
                         TRACKED_SIGNALS[sig_id] = sig
                         STATS["total"] += 1
                         STATS["pending"] += 1
@@ -236,15 +226,16 @@ async def cmd_durum(message: types.Message):
 @dp.message(Command("sinyaller"))
 async def cmd_sinyaller(message: types.Message):
     tr_now = get_tr_now().replace(tzinfo=None)
-    cutoff_time = tr_now - timedelta(hours=4)  # 4 saatten eski maçları otomatik eler
+    cutoff_time = tr_now - timedelta(hours=4)
 
     valid_pending_signals = []
     
     for sig in TRACKED_SIGNALS.values():
         status = str(sig.get("status") or "pending").lower()
         if status in ["pending", "bekliyor"]:
-            sig_date = parse_signal_date(sig)
-            if sig_date is None or sig_date >= cutoff_time:
+            added_at = sig.get("_added_at")
+            # Eklenme süresi 4 saati geçmeyen maçları alır
+            if added_at is None or added_at >= cutoff_time:
                 valid_pending_signals.append(sig)
     
     if not valid_pending_signals:
