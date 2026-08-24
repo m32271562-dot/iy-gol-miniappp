@@ -6,7 +6,7 @@ import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-BOT_TOKEN = "8720695015:AAE8oDgreKR4LZsMW8cHpLjCS6VirrCHIHA"
+BOT_TOKEN = "8720695015:AAFPqdMU_O9mj4AhFZ7mlMqjIx5OBfFnHl0"
 CHAT_ID = "6955637394"
 
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +28,18 @@ def get_tr_now():
         return datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul"))
     except Exception:
         return datetime.utcnow() + timedelta(hours=3)
+
+def parse_signal_date(sig):
+    date_str = sig.get("created_at") or sig.get("date") or sig.get("match_date") or sig.get("created")
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(str(date_str).split(".")[0], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        try:
+            return datetime.strptime(str(date_str).split("T")[0], "%Y-%m-%d")
+        except Exception:
+            return None
 
 def get_match_title(sig):
     home = sig.get("home_team") or sig.get("home") or sig.get("team_home") or ""
@@ -134,7 +146,6 @@ async def track_signals_loop():
                     else:
                         old_status = str(TRACKED_SIGNALS[sig_id].get("status") or "").lower()
                         
-                        # Durum kilitleme: Sadece bekleniyorken sonuçlanmışsa 1 defa bildirim at
                         if old_status not in ["kazandi", "kaybetti", "won", "lost"] and status in ["kazandi", "kaybetti", "won", "lost"]:
                             TRACKED_SIGNALS[sig_id]["status"] = status
                             
@@ -203,18 +214,25 @@ async def cmd_durum(message: types.Message):
 
 @dp.message(Command("sinyaller"))
 async def cmd_sinyaller(message: types.Message):
-    # Sadece bekleyen (pending) sinyalleri filtrele
-    pending_signals = [
-        sig for sig in TRACKED_SIGNALS.values() 
-        if str(sig.get("status") or "pending").lower() in ["pending", "bekliyor"]
-    ]
+    tr_now = get_tr_now().replace(tzinfo=None)
+    cutoff_time = tr_now - timedelta(hours=30)  # Son 30 saat dışındakileri eski kabul et
+
+    valid_pending_signals = []
     
-    if not pending_signals:
+    for sig in TRACKED_SIGNALS.values():
+        status = str(sig.get("status") or "pending").lower()
+        if status in ["pending", "bekliyor"]:
+            sig_date = parse_signal_date(sig)
+            # Tarih bulunamadıysa veya son 30 saat içindeyse listeye al
+            if sig_date is None or sig_date >= cutoff_time:
+                valid_pending_signals.append(sig)
+    
+    if not valid_pending_signals:
         await message.answer("⏳ <b>Şu anda bekleyen aktif bir sinyal bulunmuyor.</b>", parse_mode="HTML")
         return
     
-    text = f"⏳ <b>BEKLEYEN SİNYALLER ({len(pending_signals)})</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
-    for sig in pending_signals:
+    text = f"⏳ <b>BEKLEYEN SİNYALLER ({len(valid_pending_signals)})</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    for sig in valid_pending_signals:
         m = get_match_title(sig)
         p = get_prediction_value(sig)
         text += f"⏳ <b>{m}</b>\n┗ Tahmin: {p} | Durum: BEKLENİYOR\n\n"
@@ -227,4 +245,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
- 
