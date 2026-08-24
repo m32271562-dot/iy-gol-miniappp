@@ -127,13 +127,15 @@ async def track_signals_loop():
                             f"🚨 <b>YENİ SİNYAL!</b>\n\n"
                             f"⚽ <b>Maç:</b> {match_name}\n"
                             f"📌 <b>Tahmin:</b> {prediction}\n"
-                            f"📊 <b>Durum:</b> {status}"
+                            f"📊 <b>Durum:</b> Bekleniyor"
                         )
                         await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
 
                     else:
                         old_status = str(TRACKED_SIGNALS[sig_id].get("status") or "").lower()
-                        if old_status != status and status in ["kazandi", "kaybetti", "won", "lost"]:
+                        
+                        # Durum kilitleme: Sadece bekleniyorken sonuçlanmışsa 1 defa bildirim at
+                        if old_status not in ["kazandi", "kaybetti", "won", "lost"] and status in ["kazandi", "kaybetti", "won", "lost"]:
                             TRACKED_SIGNALS[sig_id]["status"] = status
                             
                             if STATS["pending"] > 0:
@@ -142,15 +144,17 @@ async def track_signals_loop():
                             if status in ["kazandi", "won"]:
                                 STATS["won"] += 1
                                 icon = "✅"
+                                status_tr = "KAZANDI"
                             else:
                                 STATS["lost"] += 1
                                 icon = "❌"
+                                status_tr = "KAYBETTİ"
 
                             text = (
                                 f"🔔 <b>SİNYAL SONUÇLANDI!</b>\n\n"
                                 f"⚽ <b>Maç:</b> {match_name}\n"
                                 f"📌 <b>Tahmin:</b> {prediction}\n"
-                                f"🎯 <b>Sonuç:</b> {icon} {status}\n"
+                                f"🎯 <b>Sonuç:</b> {icon} {status_tr}\n"
                                 f"📊 <b>Skor:</b> {score}"
                             )
                             await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode="HTML")
@@ -168,7 +172,7 @@ async def cmd_start(message: types.Message):
         "Yeni sinyaller ve maç sonuçları anında buraya iletilecektir.\n\n"
         "<b>Komutlar:</b>\n"
         "• /durum - Sistem istatistikleri ve başarı oranı\n"
-        "• /sinyaller - Son takip edilen sinyal listesi"
+        "• /sinyaller - Aktif bekleyen sinyaller"
     )
     await message.answer(start_text, parse_mode="HTML")
 
@@ -199,18 +203,21 @@ async def cmd_durum(message: types.Message):
 
 @dp.message(Command("sinyaller"))
 async def cmd_sinyaller(message: types.Message):
-    if not TRACKED_SIGNALS:
-        await message.answer("Henüz kaydedilmiş aktif sinyal bulunmuyor.")
+    # Sadece bekleyen (pending) sinyalleri filtrele
+    pending_signals = [
+        sig for sig in TRACKED_SIGNALS.values() 
+        if str(sig.get("status") or "pending").lower() in ["pending", "bekliyor"]
+    ]
+    
+    if not pending_signals:
+        await message.answer("⏳ <b>Şu anda bekleyen aktif bir sinyal bulunmuyor.</b>", parse_mode="HTML")
         return
     
-    text = "📋 <b>SON TAKİP EDİLEN 10 SİNYAL</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
-    for sig in list(TRACKED_SIGNALS.values())[-10:]:
+    text = f"⏳ <b>BEKLEYEN SİNYALLER ({len(pending_signals)})</b>\n━━━━━━━━━━━━━━━━━━━━\n\n"
+    for sig in pending_signals:
         m = get_match_title(sig)
         p = get_prediction_value(sig)
-        s = str(sig.get("status") or "pending").upper()
-        
-        icon = "⏳" if s.lower() in ["pending", "bekliyor"] else ("✅" if s.lower() in ["kazandi", "won"] else "❌")
-        text += f"{icon} <b>{m}</b>\n┗ Tahmin: {p} | Durum: {s}\n\n"
+        text += f"⏳ <b>{m}</b>\n┗ Tahmin: {p} | Durum: BEKLENİYOR\n\n"
     
     await message.answer(text, parse_mode="HTML")
 
