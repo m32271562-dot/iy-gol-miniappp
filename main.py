@@ -5,6 +5,7 @@ import zoneinfo
 import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiohttp import web
 
 BOT_TOKEN = "8720695015:AAHaqQzF2dun4M-QUyAS579O3ZNePranTaM"
 CHAT_ID = "6955637394"
@@ -267,7 +268,39 @@ async def cmd_sinyaller(message: types.Message):
     
     await message.answer(text, parse_mode="HTML")
 
+async def handle_webapp(request):
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>VIP Bet Signals</title>
+        <style>
+            body { font-family: sans-serif; background-color: #121212; color: white; text-align: center; padding: 20px; }
+            .card { background: #1e1e1e; padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #333; }
+            h2 { color: #0088cc; }
+        </style>
+    </head>
+    <body>
+        <h2>🤖 VIP Bet Signal App</h2>
+        <div class="card">
+            <p>Bot 7/24 aktif olarak çalışıyor!</p>
+            <p>Yeni sinyaller Telegram üzerinden iletilecektir.</p>
+        </div>
+    </body>
+    </html>
+    """
+    return web.Response(text=html_content, content_type='text/html')
+
 async def main():
+    app = web.Application()
+    app.router.add_get("/", handle_webapp)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 10000)
+    await site.start()
+
     asyncio.create_task(track_signals_loop())
     await dp.start_polling(bot)
 
