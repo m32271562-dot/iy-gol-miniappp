@@ -5,6 +5,7 @@ import zoneinfo
 import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiohttp import web
 
 BOT_TOKEN = "8720695015:AAEznlCH2vfagIXihP-2_z4v_o60B7r4B08"
 CHAT_ID = "6955637394"
@@ -53,11 +54,9 @@ def get_match_type_tag(sig):
     half = str(sig.get("half") or sig.get("period") or "").lower()
     minute = str(sig.get("minute") or sig.get("min") or "").strip()
     
-    # 1. Metin kontrolleri
     if "iy" in stype or "ht" in stype or "half" in stype or "ilk yarı" in stype or "1st" in half or "ht" in half:
         return "[İ.Y]"
     
-    # 2. Dakika kontrolü (45 ve altındaysa İ.Y)
     if minute and minute.isdigit():
         if int(minute) <= 45:
             return "[İ.Y]"
@@ -269,8 +268,18 @@ async def cmd_sinyaller(message: types.Message):
     
     await message.answer(text, parse_mode="HTML")
 
+async def handle_ping(request):
+    return web.Response(text="Bot Alive")
+
 async def main():
-    asyncio.task = asyncio.create_task(track_signals_loop())
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 10000)
+    await site.start()
+
+    asyncio.create_task(track_signals_loop())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
